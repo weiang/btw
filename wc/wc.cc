@@ -81,24 +81,32 @@ void format_output(const string& str, const string& filename, int result)
 // Code in different programming languages have differnet forms
 class Form {
 	public:
-		virtual bool is_code_line(const string&) = 0;
-		virtual bool is_blank_line(const string&) = 0;
-		virtual bool is_comment_line(const string&) = 0;
+		virtual int get_code_count(const string&) = 0;
+		virtual int get_blank_count(const string&) = 0;
+		virtual int get_comment_count(const string&) = 0;
 };
 
 class CForm : public Form {
 	public:
-		virtual bool is_code_line(const string&);
-		virtual bool is_blank_line(const string&);
-		virtual bool is_comment_line(const string&);
-
+		virtual int get_code_count(const string&);
+		virtual int get_blank_count(const string&);
+		virtual int get_comment_count(const string&);
+		
+		bool is_code_line(const string&);
+		bool is_blank_line(const string&);
+		bool is_comment_line(const string&);
 };
 
 class PythonForm : public Form {
 	public:
-		virtual bool is_code_line(const string&);
-		virtual bool is_blank_line(const string&);
-		virtual bool is_comment_line(const string&);
+		virtual int get_code_count(const string&);
+		virtual int get_blank_count(const string&);
+		virtual int get_comment_count(const string&);
+
+	private:
+		bool is_code_line(const string&);
+		bool is_blank_line(const string&);
+		bool is_comment_line(const string&);
 };
 
 class FormFactory {
@@ -134,85 +142,93 @@ class PythonFormFactory : public FormFactory {
 
 bool CForm::is_code_line(const string& str)
 {
-	int result = 0;
-	char c;
+	regex regObj {R"(^([^/]|/[^/])*[[:alnum:]]+.*$)"};
+	return regex_match(str, regObj);
 
-	auto iter = str.begin();
-	while (iter != str.end()) {
-		if (!isblank(*iter))
-			break;
-		iter ++;
-	}
-	while (iter != str.end()) {
-		c = *iter;
-		if (isdigit(c) or isalpha(c)) {
-			break;
-		}
-		if (c == '/') {
-			if ((iter + 1) != str.end() and *(iter + 1) == '/')
-				return false;
-		}
-		iter ++;
-	}
-	while (iter != str.end()) {
-		c = *iter;
-		if (isdigit(c) or isalpha(c)) {
-			result += 1;
-		}
-		if (result >= 2)
-			return true;
-	}
-	return false;
 }
 
 bool CForm::is_blank_line(const string& str)
 {
-	int result = 0;
-	for (auto c : str) {
-		if (isdigit(c) or isalpha(c)) {
-			result += 1;
-		}
-	}
-	if (result <= 1)
-		return true;
-	return false;
+	regex regObj {R"(^[^[:alnum:]]*$)"};
+	return regex_match(str, regObj);
 }
 
 bool CForm::is_comment_line(const string& str)
 {
-	bool flag = false;
-	char c;
-	int result = 0;
+	regex regObj {R"(^[^[:alnum:]/]*//.*$)"}; 
+	return regex_match(str, regObj); 
+} 
 
-	auto iter = str.begin();
-	while (iter != str.end()) {
-		if (!isblank(*iter))
-			break;
-		iter ++;
+int CForm::get_code_count(const string& str) 
+{
+	ifstream in {str};
+
+	if (!in.is_open()) {
+		cout << "Error open file: " << str << endl;
+		exit(1);
 	}
-	while (iter != str.end()) {
-		c = *iter;
-		if (isdigit(c) or isalpha(c)) 
+	
+	int result = 0;
+	while (!in.eof()) {
+		string buffer;
+		getline(in, buffer);
+		if (in.eof()) 
 			break;
-		if (c == '/') {
-			if ((iter + 1) != str.end() and *(iter + 1) == '/') {
-				flag = true;
-				iter ++;
-				iter ++;
-				break;
-			}
-		}
-		iter ++;
-	}
-	while (iter != str.end()) {
-		c = *iter;
-		if (isdigit(c) or isalpha(c)) {
+		if (is_code_line(buffer)) {
 			result += 1;
 		}
-		if (result >= 2)
-			return false;
 	}
-	return true;
+	in.close();
+	return result;
+}
+
+int CForm::get_blank_count(const string& str)
+{
+	ifstream in {str};
+
+	if (!in.is_open()) {
+		cout << "Error open file: " << str << endl;
+		exit(1);
+	}
+	
+	int result = 0;
+	while (!in.eof()) {
+		string buffer;
+		getline(in, buffer);
+		if (in.eof()) {
+			break;
+		}
+		if (is_blank_line(buffer)) {
+			result += 1;
+		}
+	}
+	in.close();
+
+	return result;
+}
+
+int CForm::get_comment_count(const string& str)
+{
+	ifstream in {str};
+
+	if (!in.is_open()) {
+		cout << "Error open file: " << str << endl;
+		exit(1);
+	}
+	
+	int result = 0;
+	while (!in.eof()) {
+		string buffer;
+		getline(in, buffer);
+		if (in.eof()) 
+			break;
+		if (is_comment_line(buffer)) {
+			result += 1;
+		}
+	}
+	in.close();
+
+	return result;
 }
 
 bool PythonForm::is_code_line(const string& str)
@@ -228,6 +244,21 @@ bool PythonForm::is_blank_line(const string& str)
 bool PythonForm::is_comment_line(const string& str)
 {
 	return false;
+}
+
+int PythonForm::get_code_count(const string&)
+{
+	return 0;
+}
+
+int PythonForm::get_blank_count(const string&)
+{
+	return 0;
+}
+
+int PythonForm::get_comment_count(const string&)
+{
+	return 0;
 }
 
 class Option {
@@ -415,31 +446,9 @@ void LOption::show()
 
 void AOption::execute()
 {
-	ifstream in(_filename);
-
-	if (!in.is_open()) {
-		cout << "Error open file: " << _filename << endl;
-		exit(1);
-	}
-	else {
-		_codeLineCount = 0;
-		_blankLineCount = 0;
-		_commentLineCount = 0;
-
-		while (!in.eof()) {
-			string buffer;
-			getline(in, buffer);
-			if (_form->is_code_line(buffer)) {
-				_codeLineCount += 1;
-			}
-			else if (_form->is_blank_line(buffer)) {
-				_blankLineCount += 1;
-			}
-			else if (_form->is_comment_line(buffer)) {
-				_commentLineCount += 1;
-			}
-		}
-	}
+	_codeLineCount = _form->get_code_count(_filename);
+	_blankLineCount = _form->get_blank_count(_filename);
+	_commentLineCount = _form->get_comment_count(_filename);
 }
 
 void AOption::show()
@@ -612,11 +621,11 @@ Option* parse_option(int argc, char* argv[])
 		form = make_form(argv[argc-1]);
 	}
 
-	cout << "Debug: " << cFlag;
-	cout << " " << wFlag;
-	cout << " " << lFlag;
-	cout << " " << aFlag;
-	cout << " " << sFlag << endl;
+//	cout << "Debug: " << cFlag;
+//	cout << " " << wFlag;
+//	cout << " " << lFlag;
+//	cout << " " << aFlag;
+//	cout << " " << sFlag << endl;
 
 	SOption* s_opt = new SOption();
 	for (auto file : files) {
@@ -759,24 +768,24 @@ void test_AOption()
 	delete form;
 }
 
-void test_parse_option()
-{
-	char* arg1[] {"./a.out", "-c", "1.txt"};
-	char* arg2[] {"./a.out", "-w", "2.txt"};
-	char* arg3[] {"./a.out", "-l", "3.txt"};
-	char* arg4[] {"./a.out", "-a", "2.c"};
-	char* arg5[] {"./a.out", "-s", "-c", "*.txt"};
-	char* arg6[] {"./a.out", "-a", "-s", "*.c"};
-	char* arg7[] {"./a.out", "-a", "-s", "/home/angwei/tmp/*.py"};
-
-	parse_option(3, arg1);
-	parse_option(3, arg2); 
-	parse_option(3, arg3); 
-	parse_option(3, arg4); 
-	parse_option(4, arg5); 
-	parse_option(4, arg6); 
-	parse_option(4, arg7); 
-}
+//void test_parse_option()
+//{
+//	char* arg1[] {"./a.out", "-c", "1.txt"};
+//	char* arg2[] {"./a.out", "-w", "2.txt"};
+//	char* arg3[] {"./a.out", "-l", "3.txt"};
+//	char* arg4[] {"./a.out", "-a", "2.c"};
+//	char* arg5[] {"./a.out", "-s", "-c", "*.txt"};
+//	char* arg6[] {"./a.out", "-a", "-s", "*.c"};
+//	char* arg7[] {"./a.out", "-a", "-s", "/home/angwei/tmp/*.py"};
+//
+//	parse_option(3, arg1);
+//	parse_option(3, arg2); 
+//	parse_option(3, arg3); 
+//	parse_option(3, arg4); 
+//	parse_option(4, arg5); 
+//	parse_option(4, arg6); 
+//	parse_option(4, arg7); 
+//}
 
 void show_vector(const vector<string>& v)
 {
@@ -808,28 +817,68 @@ void test_path_regex_files()
 	show_vector(get_all_files(string("/home/angwei/books/pci/chap2"), string("u.data")));
 }
 
+void test_c_blank_line()
+{
+	CForm* f = new CForm();
+	assert(f->is_blank_line("") == true);
+	assert(f->is_blank_line("\n") == true);
+	assert(f->is_blank_line("{}}\n") == true);
+	assert(f->is_blank_line("  \t{}}") == true);
+	assert(f->is_blank_line("  {{abc}}\n") == false);
+	delete f;
+}
+
+void test_c_code_line() 
+{
+	CForm* f = new CForm();
+
+	assert(f->is_code_line("fsadf{}") == true);
+	assert(f->is_code_line("{{{{{}}}}") == false);
+	assert(f->is_code_line("{{{{a") == true);
+	assert(f->is_code_line(";{{{fsdadf}//sfda;") == true);
+
+	delete f;
+}
+
+void test_c_comment_line()
+{
+	CForm* f = new CForm();
+
+	assert(f->is_comment_line("fsadf{}//") == false);
+	assert(f->is_comment_line("{{{{{}}}}//") == true);
+	assert(f->is_comment_line("//fdsa") == true);
+	assert(f->is_comment_line(";{{{fsdadf}/sfda;") == false);
+
+	delete f;
+}
+
 void test_main()
 {
-//	test_char();
-//	test_word();
-//  test_line();
-	
-//	test_COption();
-//	test_WOption();
-//	test_LOption();
-//	test_AOption();
-//	test_path_regex_files();
-	test_parse_option();
+	test_char();
+	test_word();
+    test_line();
+  
+	test_COption();
+	test_WOption();
+	test_LOption();
+	test_AOption();
+
+	test_path_regex_files();
+//  test_parse_option();
+
+	test_c_blank_line();
+	test_c_code_line();
+	test_c_comment_line();
 }
 
 int main(int argc, char*argv[])
 {
-	test_main();	
+//	test_main();	
 
-//	Option* option = parse_option(argc, argv);
-//	option->execute();
-//	option->show();
-//	
-//	delete option;
+	Option* option = parse_option(argc, argv);
+	option->execute();
+	option->show();
+	
+	delete option;
 	return 0;
 }
